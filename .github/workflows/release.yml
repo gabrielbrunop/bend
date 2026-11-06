@@ -1,0 +1,49 @@
+name: release
+
+# A tag v<version>-gab.<n> releases this branch as upstream releases Bend:
+# bend/{bin/bend, bend2/base.bend, bend2/bendtt.lean, bend2/effs, guide}
+# for each platform, the macOS binaries signed ad hoc as bun build
+# --compile leaves their last page's hash stale (#1025). Bun is pinned so a
+# release never takes whatever Bun a machine has.
+on:
+  push:
+    tags: ["v*-gab.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - name: Build
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            root="out/$target/bend"
+            mkdir -p "$root/bin" "$root/bend2"
+            bun build --compile --target="bun-$target" bend2/main.ts --outfile "$root/bin/bend"
+            case "$target" in darwin-*)
+              codesign --force --sign - "$root/bin/bend"
+              codesign --verify "$root/bin/bend"
+            esac
+            cp bend2/base.bend bend2/bendtt.lean "$root/bend2/"
+            cp -R bend2/effs "$root/bend2/effs"
+            cp -R guide "$root/guide"
+            tar -czf "bend-$version-$target.tar.gz" -C "out/$target" bend
+          done
+          shasum -a 256 bend-*.tar.gz | tee sha256.txt
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" bend-*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" --title "Bend ${GITHUB_REF_NAME#v}" \
+            --notes "sha256:"$'\n'"$(sed 's/^/- /' sha256.txt)"
