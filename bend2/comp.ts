@@ -1708,6 +1708,10 @@ function unit_new(name: string, emit: () => void): Unit {
 
 function unit_emit(u: Unit): void {
   FL.folds.clear();
+  FL.opens.clear();
+  FL.uses.clear();
+  FL.spines.clear();
+  FL.ground.clear();
   FL.unit = Object.assign(u, { segs: [], n: 0, lent: new Set(), lends: [],
     clos: new Set() });
   u.emit();
